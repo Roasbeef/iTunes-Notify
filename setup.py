@@ -39,13 +39,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from itunesnotify.core import __version__
 
 
-def publish():
-    os.system("python setup.py sdist upload")
-
-if sys.argv[-1] == "publish":
-    publish()
-    sys.exit()
-
 dependencies = ['gntp', 'docopt']
 
 setup(
