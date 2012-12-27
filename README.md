@@ -1,4 +1,4 @@
 iTunes-Notify
 =============
 
-A little hack I threw together that notifies with info of current song through growl
+A little hack I threw together to send a growl notification with info of the current playing song
