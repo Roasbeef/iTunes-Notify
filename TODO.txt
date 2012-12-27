@@ -1,0 +1,4 @@
+1. Get album artwork working
+2. Lay down some basic tests
+3. Find better way of storing state of pid
+4. Add some customization/config options
