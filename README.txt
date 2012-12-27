@@ -1,7 +1,7 @@
 iTunes-Notify
 ========
 
-.. image:: https://raw.github.com/Roasbeef/iTunes-Notify/master/Demo.png
+.. image:: https://github.com/Roasbeef/iTunes-Notify/raw/master/Demo.png
    :align: left
 
 Installation
