@@ -49,10 +49,11 @@ setup(
     author='Olaoluwa Osuntokun',
     author_email='laolu32@gmail.com',
     install_requires=dependencies,
-    tests_require=['tox==1.3'],
     packages=['itunesnotify', ],
+    package_dir={'itunesnotify': 'itunesnotify'},
+    package_data={'itunesnotify': ['pid.txt']},
     license='The Unlicense',
-    long_description=open('README.rst').read(),
+    long_description=open('README').read(),
     entry_points={
         'console_scripts': [
             'itunes-notify = itunesnotify.cli:begin',

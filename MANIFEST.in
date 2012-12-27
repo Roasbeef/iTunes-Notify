@@ -1,0 +1,2 @@
+include setup.py
+include itunesnotify/pid.txt

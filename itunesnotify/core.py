@@ -12,7 +12,8 @@ from time import sleep
 from gntp.notifier import GrowlNotifier
 
 
-__version__ = (0, 0, 1)
+__version__ = (0, 0, 1, 1)
+PID_PATH = os.path.join(os.path.dirname(__file__), "pid.txt")
 
 
 def async(f):
@@ -35,7 +36,7 @@ def end_notifications():
     """ Stop iTunes-Notify if one is running
         otherwise exits with a message
     """
-    with open('pid.txt', 'r+') as f:
+    with open(PID_PATH, 'r+') as f:
         pid = f.read()
         #blank file so program not running
         if not pid:
@@ -46,7 +47,7 @@ def end_notifications():
         print 'iTunes-Notify successfully stopped'
 
     #blank out file for future use
-    open('pid.txt', 'w').close()
+    open(PID_PATH, 'w').close()
 
 
 class iTunes(object):
@@ -112,13 +113,13 @@ class iTunesNotifier(GrowlNotifier):
 
     @property
     def _already_running(self):
-        with open('pid.txt', 'r') as f:
+        with open(PID_PATH, 'r') as f:
             pid = f.read()
             return pid != ' ' and pid != ''
 
     def _write_pid(self, pid):
         """ Writes process pid to file for stopping execution later """
-        with open('pid.txt', 'w') as f:
+        with open(PID_PATH, 'w') as f:
             f.write(str(pid))
 
     @async
