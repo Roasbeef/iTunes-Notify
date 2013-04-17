@@ -3,33 +3,43 @@ import subprocess
 import os
 import sys
 import re
+import pykka
 
-from threading import Thread
-from functools import wraps
 from collections import namedtuple
-from Queue import Queue
-from time import sleep
 from gntp.notifier import GrowlNotifier
 
 
-__version__ = (0, 0, 1, 1)
+__version__ = (0, 0, 1, 0)
 PID_PATH = os.path.join(os.path.dirname(__file__), "pid.txt")
 
 
-def async(f):
-    """ Decorator to execute function in new thread """
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        thr = Thread(target=f, args=args, kwargs=kwargs)
-        thr.start()
-    return wrapper
+def write_pid(pid):
+    """ Writes process pid to file for stopping execution later """
+    with open(PID_PATH, 'w+') as f:
+        f.write(str(pid))
+
+
+def already_running():
+    """ Return true if an instance of iTunes-Notify is currently running """
+    with open(PID_PATH, 'r') as f:
+        pid = f.read()
+        return pid != ' ' and pid != ''
 
 
 def begin_notifications():
-    """ Start iTunes-Notify
-    """
-    notify = iTunesNotifier()
-    notify.run()
+    """ Start iTunes-Notify, unless an instance is currently running """
+    if already_running():
+        print 'iTunes-Notify is already running'
+        sys.exit(0)
+
+    fpid = os.fork()
+    # daemonize
+    if fpid != 0:
+        write_pid(fpid)
+        sys.exit(0)
+
+    notifier = iTunesNotifierActor.start().proxy()
+    listener = iTunesListenerActor.start(notifier).proxy()
 
 
 def end_notifications():
@@ -51,6 +61,7 @@ def end_notifications():
 
 
 class iTunes(object):
+    pykka_traversable = True
 
     @staticmethod
     def is_open():
@@ -60,9 +71,7 @@ class iTunes(object):
         ps_cmd = ["ps", "axo", "pid,command"]
         p = subprocess.Popen(ps_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         processes = p.communicate()[0]
-        if re.search(r'(/Applications/iTunes.app/Contents/MacOS/iTunes\s[^/]*)', processes):
-            return True
-        return False
+        return re.search(r'(/Applications/iTunes.app/Contents/MacOS/iTunes\s[^/]*)', processes)
 
     @staticmethod
     def current_status():
@@ -81,80 +90,44 @@ class iTunes(object):
                                        '&"#"& album of current track as string']).strip().split('#')
 
 
-class iTunesNotifier(GrowlNotifier):
+class iTunesListenerActor(pykka.gevent.GeventActor):
+    def __init__(self, notifier):
+        super(iTunesListenerActor, self).__init__()
+        self.notifier = notifier
+        self.itunes = iTunes()
+        self.last_track_title = ''
+        self.new_track = namedtuple('Track', 'title artist album')
 
-    def __init__(self):
-        #create growl instance
-        GrowlNotifier.__init__(self,
-                               applicationName="iTunes",
-                               notifications=["Current Song"],
-                               defaultNotifications=["Current Song"])
-
-        #register growl app with relevant information
-        self.register()
-        self.song_queue = Queue()
-        self.iTunes = iTunes()
-
-    def run(self):
-        if self._already_running:
-            print 'iTunes-Notify is already running'
-            sys.exit(0)
-
-        print 'iTunes-Notify is now running.'
-        print 'Run "itunes-notify stop" to stop the notifications'
-        #deatch from tty to enable script to run beyond current terminal
-        #http://stackoverflow.com/a/1603152/988919
-        fpid = os.fork()
-        if fpid != 0:
-            self._write_pid(fpid)
-            sys.exit(0)
-        self._feed_songs()
-        self._grab_songs()
-
-    @property
-    def _already_running(self):
-        with open(PID_PATH, 'r') as f:
-            pid = f.read()
-            return pid != ' ' and pid != ''
-
-    def _write_pid(self, pid):
-        """ Writes process pid to file for stopping execution later """
-        with open(PID_PATH, 'w') as f:
-            f.write(str(pid))
-
-    @async
-    def _feed_songs(self):
-        """ Creates worker thread to feed songs
-            into the song_queue
-        """
-        Song = namedtuple('Song', 'name artist album')
-        previous_song = set(' ')
+    def listen(self, message):
+        # TODO: Find a better way handling this
         while True:
-            # TODO: Find a better way handling this
             try:
-                if self.iTunes.is_open() and self.iTunes.current_status() == 'playing':
-                    song, artist, album = self.iTunes.current_song_details()
-                    # don't notify of the same song more than once
-                    if song not in previous_song:
-                        previous_song.pop()
-                        previous_song.add(song)
-                        s = Song(song, artist, album)
-                        self.song_queue.put(s)
+                if self.itunes.is_open() and self.itunes.current_status() == 'playing':
+                    title, artist, album = self.iTunes.current_song_details()
+                    # don't reply with the song sent last
+                    if title.get() != self.last_track_title:
+                        s = self.new_track(title.get(), artist.get(), album.get())
+                        # send the new song over to the notifier actor
+                        self.notifier.tell({'new_track': s})
             except:  # iTunes might be open/closed for a split second and cause an error
                 pass
 
-            sleep(0.5)
 
-    def _grab_songs(self):
-        """ Grab songs from the song_queue
-            and send the notification
-        """
-        while True:
-            if not self.song_queue.empty():
-                song = self.song_queue.get()
-                self.notify(
-                    noteType="Current Song",
-                    title=song.name,
-                    description='by %s from %s' % (song.artist, song.album))
+class iTunesNotifierActor(pykka.gevent.GeventActor, GrowlNotifier):
+    def __init__(self):
+        # register growl app with relevant information
+        super(iTunesNotifierActor, self).__init__(applicationName="iTunes",
+                                                  notifications=["Current Song"],
+                                                  defaultNotifications=["Current Song"])
+        self.register()
+        # initialize actor
+        super(iTunesNotifierActor, self).__init__()
 
-            sleep(0.5)
+    def on_receive(self, message):
+        track = message['new_track']
+        self.notify(noteType="Current Track", title=track.name,
+                    description='by {} from {}'.format(track.artist, track.album))
+
+    def on_start(self):
+        print 'iTunes-Notify is now running.'
+        print 'Run "itunes-notify stop" to stop the notifications'
