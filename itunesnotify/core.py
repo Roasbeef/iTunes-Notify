@@ -40,6 +40,7 @@ def begin_notifications():
 
     notifier = iTunesNotifierActor.start().proxy()
     listener = iTunesListenerActor.start(notifier).proxy()
+    listener.listen()
 
 
 def end_notifications():
