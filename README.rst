@@ -1,3 +1,6 @@
+This project is no longer maintained as iTunes now ships with this feature.
+==========================================================================
+
 ==============
 iTunes-Notify
 ==============
